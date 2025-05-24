@@ -3,46 +3,59 @@ import pytesseract
 from docx import Document
 from docx.oxml.ns import qn
 from docx.shared import Pt
+from docx.oxml import OxmlElement
+from docx.oxml.ns import nsdecls
 from PIL import Image
 import re
 
 # Set Tesseract path and language
-pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'  # Adjust path if needed
+pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'  # Adjust if needed
 lang = 'fas'  # Persian language
 
 def remove_parentheses_content(text):
-    # Remove everything inside parentheses (including the parentheses themselves)
     return re.sub(r'\(.*?\)', '', text)
 
-def set_font_b_nazanin(paragraph):
-    if paragraph.runs:
-        run = paragraph.runs[0]
-        run.font.name = 'B Nazanin'
-        run._element.rPr.rFonts.set(qn('w:eastAsia'), 'B Nazanin')
-        run.font.size = Pt(14)  # Optional: Set font size
+def set_paragraph_rtl(paragraph):
+    """Set paragraph direction to RTL."""
+    p = paragraph._element
+    pPr = p.get_or_add_pPr()
+    bidi = OxmlElement('w:bidi')
+    bidi.set(qn('w:val'), '1')
+    pPr.append(bidi)
+
+def set_font_run(run):
+    """Set fonts: Persian to B Nazanin, English to Times New Roman."""
+    run.font.name = 'B Nazanin'
+    run._element.rPr.rFonts.set(qn('w:eastAsia'), 'B Nazanin')
+    run._element.rPr.rFonts.set(qn('w:ascii'), 'Times New Roman')
+    run._element.rPr.rFonts.set(qn('w:hAnsi'), 'Times New Roman')
+    run.font.size = Pt(14)
 
 def extract_persian_ocr_to_word(pdf_path, output_docx_path):
     images = convert_from_path(pdf_path)
     doc = Document()
 
     for i, image in enumerate(images, start=1):
-        # OCR image to string
         text = pytesseract.image_to_string(image, lang=lang)
-        # Remove parentheses and strip whitespace
         text = remove_parentheses_content(text).strip()
 
-        # Add page title
         title_paragraph = doc.add_paragraph(f"\n=== PAGE {i} ===")
-        set_font_b_nazanin(title_paragraph)
+        set_paragraph_rtl(title_paragraph)
+        if title_paragraph.runs:
+            set_font_run(title_paragraph.runs[0])
 
-        # Add OCR content if not empty
         if text:
-            content_paragraph = doc.add_paragraph(text)
-            set_font_b_nazanin(content_paragraph)
+            content_paragraph = doc.add_paragraph()
+            set_paragraph_rtl(content_paragraph)
 
-    # Save the Word document
+            run = content_paragraph.add_run(text)
+            set_font_run(run)
+
     doc.save(output_docx_path)
     print(f"OCR Persian text saved to {output_docx_path}")
 
 # Example usage
-extract_persian_ocr_to_word("file2.pdf", "extracted_text_ocr2.docx")
+extract_persian_ocr_to_word(
+    input('PDF file name (without .pdf): ') + ".pdf",
+    input('Output DOCX file name (without .docx): ') + ".docx"
+)
